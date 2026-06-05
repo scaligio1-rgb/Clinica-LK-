@@ -6,6 +6,51 @@
 <title>Clínica LK · Financeiro</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script type="module">
+// ── FIREBASE CONFIG ────────────────────────────────────
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCWLgVvZTDoM3Gfx_VaD4Mpk9AKjeL5Cg8",
+  authDomain: "clinica-lk-financeiro.firebaseapp.com",
+  projectId: "clinica-lk-financeiro",
+  storageBucket: "clinica-lk-financeiro.firebasestorage.app",
+  messagingSenderId: "595058362074",
+  appId: "1:595058362074:web:8f85a7164b70f6c0fe47e3",
+  measurementId: "G-6C34439C5F"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const DOC_ID = 'clinicalk';
+
+// Expõe funções ao escopo global
+window._fbSave = async function(data) {
+  try {
+    await setDoc(doc(db, 'financeiro', DOC_ID), data);
+    const el=document.getElementById('cloud-status');
+    if(el){el.textContent='☁ salvo';el.style.color='var(--green)';setTimeout(()=>{if(el)el.style.color='var(--text3)';},2000);}
+  } catch(e) {
+    console.error('Firebase save error:', e);
+  }
+};
+
+window._fbLoad = async function() {
+  try {
+    const snap = await getDoc(doc(db, 'financeiro', DOC_ID));
+    return snap.exists() ? snap.data() : null;
+  } catch(e) {
+    console.error('Firebase load error:', e);
+    return null;
+  }
+};
+
+window._fbReady = true;
+
+// Dispara evento para o app principal saber que o Firebase está pronto
+window.dispatchEvent(new Event('firebase-ready'));
+</script>
 <style>
 :root{
   /* Core palette — deep noir rose */
@@ -866,6 +911,7 @@ let cTipo = 'out';
 let imt = null; // icon modal target id
 
 function save(){
+  // Salva localmente (fallback)
   localStorage.setItem('fp3_tx',JSON.stringify(tx));
   localStorage.setItem('fp3_cf',JSON.stringify(cfs));
   localStorage.setItem('fp3_cats',JSON.stringify(cats));
@@ -873,6 +919,32 @@ function save(){
   localStorage.setItem('fp3_cartoes',JSON.stringify(cartoes));
   localStorage.setItem('fp3_parcelas',JSON.stringify(parcelas));
   localStorage.setItem('fp3_boletos',JSON.stringify(boletos));
+  // Salva no Firebase (nuvem)
+  if(window._fbSave){
+    window._fbSave({tx,cfs,cats,lims,cartoes,parcelas,boletos,_updated:Date.now()});
+  }
+}
+
+async function loadFromCloud(){
+  if(!window._fbLoad) return false;
+  const data = await window._fbLoad();
+  if(!data) return false;
+  if(data.tx)       tx       = data.tx;
+  if(data.cfs)      cfs      = data.cfs;
+  if(data.cats)     cats     = data.cats;
+  if(data.lims)     lims     = data.lims;
+  if(data.cartoes)  cartoes  = data.cartoes;
+  if(data.parcelas) parcelas = data.parcelas;
+  if(data.boletos)  boletos  = data.boletos;
+  // Sincroniza localStorage
+  localStorage.setItem('fp3_tx',JSON.stringify(tx));
+  localStorage.setItem('fp3_cf',JSON.stringify(cfs));
+  localStorage.setItem('fp3_cats',JSON.stringify(cats));
+  localStorage.setItem('fp3_lim',JSON.stringify(lims));
+  localStorage.setItem('fp3_cartoes',JSON.stringify(cartoes));
+  localStorage.setItem('fp3_parcelas',JSON.stringify(parcelas));
+  localStorage.setItem('fp3_boletos',JSON.stringify(boletos));
+  return true;
 }
 
 // ── TOAST ─────────────────────────────────────────────
@@ -1671,7 +1743,24 @@ function initApp() {
     foot.appendChild(div);
   }
 
-  bsel(); renderAll(); renderDash();
+  // Carrega dados da nuvem se Firebase estiver pronto
+  async function startApp(){
+    const synced = await loadFromCloud();
+    if(synced) toast('☁ Dados sincronizados da nuvem');
+    bsel(); renderAll(); renderDash();
+  }
+
+  if(window._fbReady){
+    startApp();
+  } else {
+    // Firebase ainda carregando — inicia com localStorage e sincroniza depois
+    bsel(); renderAll(); renderDash();
+    window.addEventListener('firebase-ready', ()=>{
+      loadFromCloud().then(ok=>{
+        if(ok){ toast('☁ Dados sincronizados da nuvem'); bsel(); renderAll(); renderDash(); }
+      });
+    });
+  }
 }
 
 // ── BOOT ─────────────────────────────────────────────
